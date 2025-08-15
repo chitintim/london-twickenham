@@ -139,8 +139,11 @@ async function processTrainData(departures, fromStation, toStation) {
                 );
                 
                 if (targetLocation) {
-                    arrivalTime = targetLocation.sta;
-                    actualArrivalTime = targetLocation.eta === 'On time' ? targetLocation.sta : targetLocation.eta;
+                    // For arrivals, use 'st' (scheduled time) and 'et' (expected time)
+                    // For departures from a station, it would be 'sta' and 'eta'
+                    arrivalTime = targetLocation.st || targetLocation.sta;
+                    const expectedTime = targetLocation.et || targetLocation.eta;
+                    actualArrivalTime = (expectedTime === 'On time' || !expectedTime) ? arrivalTime : expectedTime;
                 }
             }
         } catch (err) {

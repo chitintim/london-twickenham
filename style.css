@@ -62,8 +62,8 @@ body {
 }
 
 .switch-btn {
-    background: rgba(255,255,255,0.1);
-    border: 2px solid rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.15);
+    border: 2px solid rgba(255,255,255,0.4);
     color: var(--header-text);
     font-size: 24px;
     width: 56px;
@@ -74,10 +74,16 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.switch-btn:hover {
+    background: rgba(255,255,255,0.25);
+    border-color: rgba(255,255,255,0.6);
 }
 
 .switch-btn:active {
-    background: rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.3);
     transform: scale(0.95);
 }
 
