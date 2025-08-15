@@ -70,20 +70,38 @@ async function fetchServiceDetails(serviceId) {
     return response.json();
 }
 
-function parseTime(timeString) {
+function parseTime(timeString, referenceTime = null) {
     if (!timeString) return null;
     const [hours, minutes] = timeString.split(':').map(Number);
     const date = new Date();
     date.setHours(hours, minutes, 0, 0);
+    
+    // If we have a reference time and the parsed time is before it,
+    // assume it's the next day
+    if (referenceTime) {
+        const refDate = typeof referenceTime === 'string' ? parseTime(referenceTime) : referenceTime;
+        if (refDate && date < refDate) {
+            date.setDate(date.getDate() + 1);
+        }
+    }
+    
     return date;
 }
 
-function calculateSecondsUntil(timeString) {
-    const targetTime = parseTime(timeString);
+function calculateSecondsUntil(timeString, referenceTime = null) {
+    const targetTime = parseTime(timeString, referenceTime);
     if (!targetTime) return null;
     
     const now = new Date();
-    const diff = targetTime - now;
+    let diff = targetTime - now;
+    
+    // If the time appears to be in the past but it's a time string (not a date),
+    // it might be tomorrow
+    if (diff < -43200000 && timeString && timeString.includes(':')) { // More than 12 hours in past
+        targetTime.setDate(targetTime.getDate() + 1);
+        diff = targetTime - now;
+    }
+    
     return Math.floor(diff / 1000);
 }
 
@@ -103,7 +121,7 @@ function calculateDuration(departureTime, arrivalTime) {
     if (!departureTime || !arrivalTime) return null;
     
     const dep = parseTime(departureTime);
-    const arr = parseTime(arrivalTime);
+    const arr = parseTime(arrivalTime, departureTime); // Use departure as reference
     
     if (!dep || !arr) return null;
     
@@ -156,7 +174,7 @@ async function processTrainData(departures, fromStation, toStation) {
                             // Calculate delay from departure and apply to arrival
                             const depDelayMs = parseTime(actualDepartureTime) - parseTime(departureTime);
                             if (depDelayMs && arrivalTime) {
-                                const scheduledArrival = parseTime(arrivalTime);
+                                const scheduledArrival = parseTime(arrivalTime, departureTime);
                                 const estimatedArrival = new Date(scheduledArrival.getTime() + depDelayMs);
                                 actualArrivalTime = `${String(estimatedArrival.getHours()).padStart(2, '0')}:${String(estimatedArrival.getMinutes()).padStart(2, '0')}`;
                             } else {
@@ -184,7 +202,7 @@ async function processTrainData(departures, fromStation, toStation) {
                             // Calculate delay from departure and apply to arrival
                             const depDelayMs = parseTime(actualDepartureTime) - parseTime(departureTime);
                             if (depDelayMs && arrivalTime) {
-                                const scheduledArrival = parseTime(arrivalTime);
+                                const scheduledArrival = parseTime(arrivalTime, departureTime);
                                 const estimatedArrival = new Date(scheduledArrival.getTime() + depDelayMs);
                                 actualArrivalTime = `${String(estimatedArrival.getHours()).padStart(2, '0')}:${String(estimatedArrival.getMinutes()).padStart(2, '0')}`;
                             } else {
