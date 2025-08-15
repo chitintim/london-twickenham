@@ -1,23 +1,13 @@
 const STATIONS = {
     TWICKENHAM: 'TWI',
-    LONDON_STATIONS: ['WAT', 'VIC', 'CLJ', 'PAD', 'KGX', 'LST', 'CHX', 'LBG', 'CST'],
-    LONDON_NAMES: {
-        'WAT': 'London Waterloo',
-        'VIC': 'London Victoria',
-        'CLJ': 'Clapham Junction',
-        'PAD': 'London Paddington',
-        'KGX': 'London Kings Cross',
-        'LST': 'London Liverpool Street',
-        'CHX': 'London Charing Cross',
-        'LBG': 'London Bridge',
-        'CST': 'London Cannon Street'
-    }
+    WATERLOO: 'WAT'
 };
 
 const HUXLEY_BASE = 'https://huxley2.azurewebsites.net';
 
 let currentDirection = 'to-london';
 let refreshInterval;
+let countdownInterval;
 let trainData = [];
 
 const elements = {
@@ -44,9 +34,9 @@ function determineDirection() {
 function updateDirectionDisplay() {
     if (currentDirection === 'to-london') {
         elements.fromStation.textContent = 'TWICKENHAM';
-        elements.toStation.textContent = 'LONDON';
+        elements.toStation.textContent = 'LONDON WATERLOO';
     } else {
-        elements.fromStation.textContent = 'LONDON';
+        elements.fromStation.textContent = 'LONDON WATERLOO';
         elements.toStation.textContent = 'TWICKENHAM';
     }
 }
@@ -57,8 +47,8 @@ function switchDirection() {
     fetchTrains();
 }
 
-async function fetchDepartures(stationCode) {
-    const url = `${HUXLEY_BASE}/departures/${stationCode}`;
+async function fetchFilteredDepartures(fromStation, toStation) {
+    const url = `${HUXLEY_BASE}/departures/${fromStation}/to/${toStation}`;
     const response = await fetch(url);
     
     if (!response.ok) {
@@ -68,24 +58,16 @@ async function fetchDepartures(stationCode) {
     return response.json();
 }
 
-function isLondonStation(stationName, stationCode) {
-    const name = stationName.toLowerCase();
-    return STATIONS.LONDON_STATIONS.includes(stationCode) ||
-           name.includes('london') ||
-           name.includes('waterloo') ||
-           name.includes('victoria') ||
-           name.includes('clapham') ||
-           name.includes('paddington') ||
-           name.includes('kings cross') ||
-           name.includes('liverpool street') ||
-           name.includes('charing cross') ||
-           name.includes('london bridge') ||
-           name.includes('cannon street');
-}
-
-function isTwickenhamStation(stationName, stationCode) {
-    const name = stationName.toLowerCase();
-    return stationCode === 'TWI' || name.includes('twickenham');
+async function fetchServiceDetails(serviceId) {
+    const url = `${HUXLEY_BASE}/service/${serviceId}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+        console.warn(`Failed to fetch service details: ${response.status}`);
+        return null;
+    }
+    
+    return response.json();
 }
 
 function parseTime(timeString) {
@@ -96,119 +78,115 @@ function parseTime(timeString) {
     return date;
 }
 
-function calculateMinutesUntil(timeString) {
+function calculateSecondsUntil(timeString) {
     const targetTime = parseTime(timeString);
     if (!targetTime) return null;
     
     const now = new Date();
     const diff = targetTime - now;
-    return Math.floor(diff / 60000);
+    return Math.floor(diff / 1000);
 }
 
-function formatDepartsIn(minutes) {
-    if (minutes === null || minutes < 0) return 'Departed';
-    if (minutes === 0) return 'Now';
-    if (minutes === 1) return 'Departs in 1 min';
-    return `Departs in ${minutes} min`;
+function formatDepartsIn(seconds) {
+    if (seconds === null || seconds < 0) return 'Departed';
+    if (seconds < 60) return `${seconds}s`;
+    
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    
+    if (minutes === 0) return `${remainingSeconds}s`;
+    if (remainingSeconds === 0) return `${minutes}m`;
+    return `${minutes}m ${remainingSeconds}s`;
 }
 
-function processTrainData(departures, direction) {
+function calculateDuration(departureTime, arrivalTime) {
+    if (!departureTime || !arrivalTime) return null;
+    
+    const dep = parseTime(departureTime);
+    const arr = parseTime(arrivalTime);
+    
+    if (!dep || !arr) return null;
+    
+    const diffMs = arr - dep;
+    const minutes = Math.floor(diffMs / 60000);
+    
+    if (minutes < 0) return null;
+    return `${minutes} mins`;
+}
+
+async function processTrainData(departures, fromStation, toStation) {
     const trains = [];
     
     if (!departures || !departures.trainServices) return trains;
     
-    for (const service of departures.trainServices) {
+    for (const service of departures.trainServices.slice(0, 5)) {
         if (service.isCancelled) continue;
         
-        const destination = service.destination?.[0];
-        if (!destination) continue;
+        const departureTime = service.std;
+        const actualDepartureTime = service.etd === 'On time' ? service.std : service.etd;
+        const secondsUntil = calculateSecondsUntil(actualDepartureTime);
         
-        const isToLondon = direction === 'to-london' && 
-                          isLondonStation(destination.locationName, destination.crs);
-        const isToTwickenham = direction === 'from-london' && 
-                               isTwickenhamStation(destination.locationName, destination.crs);
+        if (secondsUntil !== null && secondsUntil < -60) continue;
         
-        if (!isToLondon && !isToTwickenham) continue;
+        let arrivalTime = null;
+        let actualArrivalTime = null;
         
-        const departureTime = service.etd === 'On time' ? service.std : service.etd;
-        const minutesUntil = calculateMinutesUntil(departureTime);
+        try {
+            const details = await fetchServiceDetails(service.serviceIdUrlSafe);
+            if (details && details.locations) {
+                const targetLocation = details.locations.find(loc => 
+                    loc.crs === toStation
+                );
+                
+                if (targetLocation) {
+                    arrivalTime = targetLocation.sta;
+                    actualArrivalTime = targetLocation.eta === 'On time' ? targetLocation.sta : targetLocation.eta;
+                }
+            }
+        } catch (err) {
+            console.warn('Could not fetch arrival time:', err);
+        }
         
-        if (minutesUntil !== null && minutesUntil < -1) continue;
-        
-        const arrivalTime = service.eta || service.sta || null;
-        const arrivalMinutes = arrivalTime ? 
-            calculateMinutesUntil(arrivalTime) + (minutesUntil || 0) : null;
+        const duration = calculateDuration(actualDepartureTime, actualArrivalTime);
         
         trains.push({
-            departureTime: service.std,
-            actualDepartureTime: departureTime,
-            arrivalTime: service.sta,
-            actualArrivalTime: arrivalTime,
-            arrivalMinutes: arrivalMinutes,
+            departureTime: departureTime,
+            actualDepartureTime: actualDepartureTime,
+            arrivalTime: arrivalTime,
+            actualArrivalTime: actualArrivalTime,
+            duration: duration,
             platform: service.platform || '-',
             platformConfirmed: service.platform && !service.platform.includes('*'),
-            destination: destination.locationName,
+            destination: service.destination[0].locationName,
             operator: service.operator,
             isDelayed: service.etd !== 'On time' && service.etd !== 'Cancelled',
             isCancelled: service.isCancelled || false,
-            minutesUntil: minutesUntil
+            secondsUntil: secondsUntil
         });
     }
-    
-    trains.sort((a, b) => {
-        if (a.arrivalMinutes === null && b.arrivalMinutes === null) {
-            return (a.minutesUntil || 0) - (b.minutesUntil || 0);
-        }
-        if (a.arrivalMinutes === null) return 1;
-        if (b.arrivalMinutes === null) return -1;
-        return a.arrivalMinutes - b.arrivalMinutes;
-    });
-    
-    return trains.slice(0, 3);
-}
-
-async function fetchTrainsFromMultipleStations() {
-    const trains = [];
-    const stationsToCheck = STATIONS.LONDON_STATIONS.slice(0, 3);
-    
-    for (const station of stationsToCheck) {
-        try {
-            const data = await fetchDepartures(station);
-            const processed = processTrainData(data, 'from-london');
-            trains.push(...processed);
-        } catch (err) {
-            console.warn(`Failed to fetch from ${station}:`, err);
-        }
-    }
-    
-    trains.sort((a, b) => {
-        if (a.arrivalMinutes === null && b.arrivalMinutes === null) {
-            return (a.minutesUntil || 0) - (b.minutesUntil || 0);
-        }
-        if (a.arrivalMinutes === null) return 1;
-        if (b.arrivalMinutes === null) return -1;
-        return a.arrivalMinutes - b.arrivalMinutes;
-    });
     
     return trains.slice(0, 3);
 }
 
 async function fetchTrains() {
     showLoading();
+    stopCountdown();
     
     try {
         let trains;
         
         if (currentDirection === 'to-london') {
-            const data = await fetchDepartures(STATIONS.TWICKENHAM);
-            trains = processTrainData(data, 'to-london');
+            const data = await fetchFilteredDepartures(STATIONS.TWICKENHAM, STATIONS.WATERLOO);
+            trains = await processTrainData(data, STATIONS.TWICKENHAM, STATIONS.WATERLOO);
         } else {
-            trains = await fetchTrainsFromMultipleStations();
+            const data = await fetchFilteredDepartures(STATIONS.WATERLOO, STATIONS.TWICKENHAM);
+            trains = await processTrainData(data, STATIONS.WATERLOO, STATIONS.TWICKENHAM);
         }
         
         trainData = trains;
         displayTrains(trains);
         updateLastUpdateTime();
+        startCountdown();
         
     } catch (error) {
         console.error('Error fetching trains:', error);
@@ -232,7 +210,7 @@ function displayTrains(trains) {
     
     const template = document.getElementById('trainCard');
     
-    trains.forEach(train => {
+    trains.forEach((train, index) => {
         const card = template.content.cloneNode(true);
         
         card.querySelector('.departure-time').textContent = train.departureTime;
@@ -243,10 +221,12 @@ function displayTrains(trains) {
         card.querySelector('.platform-number').textContent = train.platform;
         
         const departsIn = card.querySelector('.departs-in');
-        departsIn.textContent = formatDepartsIn(train.minutesUntil);
-        if (train.minutesUntil !== null && train.minutesUntil <= 2) {
+        departsIn.setAttribute('data-seconds', train.secondsUntil || 0);
+        departsIn.textContent = formatDepartsIn(train.secondsUntil);
+        
+        if (train.secondsUntil !== null && train.secondsUntil <= 120) {
             departsIn.classList.add('urgent');
-        } else if (train.minutesUntil !== null && train.minutesUntil <= 5) {
+        } else if (train.secondsUntil !== null && train.secondsUntil <= 300) {
             departsIn.classList.add('soon');
         }
         
@@ -262,11 +242,51 @@ function displayTrains(trains) {
             statusBadge.classList.add('on-time');
         }
         
-        card.querySelector('.destination').textContent = train.destination;
-        card.querySelector('.operator').textContent = train.operator;
+        const destination = card.querySelector('.destination');
+        destination.textContent = train.destination;
+        
+        const operator = card.querySelector('.operator');
+        if (train.duration) {
+            operator.textContent = `${train.operator} • ${train.duration}`;
+        } else {
+            operator.textContent = train.operator;
+        }
         
         elements.trainsList.appendChild(card);
     });
+}
+
+function updateCountdowns() {
+    const departsInElements = document.querySelectorAll('.departs-in');
+    
+    departsInElements.forEach(element => {
+        let seconds = parseInt(element.getAttribute('data-seconds'));
+        
+        if (!isNaN(seconds)) {
+            seconds--;
+            element.setAttribute('data-seconds', seconds);
+            element.textContent = formatDepartsIn(seconds);
+            
+            element.classList.remove('urgent', 'soon');
+            if (seconds > 0 && seconds <= 120) {
+                element.classList.add('urgent');
+            } else if (seconds > 0 && seconds <= 300) {
+                element.classList.add('soon');
+            }
+        }
+    });
+}
+
+function startCountdown() {
+    stopCountdown();
+    countdownInterval = setInterval(updateCountdowns, 1000);
+}
+
+function stopCountdown() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
 }
 
 function showLoading() {
@@ -361,6 +381,7 @@ function initialize() {
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
             stopAutoRefresh();
+            stopCountdown();
         } else {
             fetchTrains();
             startAutoRefresh();
