@@ -150,8 +150,19 @@ async function processTrainData(departures, fromStation, toStation) {
                     if (targetLocation) {
                         arrivalTime = targetLocation.st;
                         const expectedTime = targetLocation.et;
+                        
                         // Handle "Delayed" without specific time
-                        if (expectedTime === 'On time' || expectedTime === 'Delayed' || !expectedTime) {
+                        if (expectedTime === 'Delayed' && actualDepartureTime !== departureTime) {
+                            // Calculate delay from departure and apply to arrival
+                            const depDelayMs = parseTime(actualDepartureTime) - parseTime(departureTime);
+                            if (depDelayMs && arrivalTime) {
+                                const scheduledArrival = parseTime(arrivalTime);
+                                const estimatedArrival = new Date(scheduledArrival.getTime() + depDelayMs);
+                                actualArrivalTime = `${String(estimatedArrival.getHours()).padStart(2, '0')}:${String(estimatedArrival.getMinutes()).padStart(2, '0')}`;
+                            } else {
+                                actualArrivalTime = arrivalTime;
+                            }
+                        } else if (expectedTime === 'On time' || expectedTime === 'Delayed' || !expectedTime) {
                             actualArrivalTime = arrivalTime;
                         } else {
                             actualArrivalTime = expectedTime;
@@ -167,8 +178,19 @@ async function processTrainData(departures, fromStation, toStation) {
                     if (targetLocation) {
                         arrivalTime = targetLocation.st;
                         const actualTime = targetLocation.at;
+                        
                         // Handle "Delayed" without specific time
-                        if (actualTime === 'On time' || actualTime === 'Delayed' || !actualTime) {
+                        if (actualTime === 'Delayed' && actualDepartureTime !== departureTime) {
+                            // Calculate delay from departure and apply to arrival
+                            const depDelayMs = parseTime(actualDepartureTime) - parseTime(departureTime);
+                            if (depDelayMs && arrivalTime) {
+                                const scheduledArrival = parseTime(arrivalTime);
+                                const estimatedArrival = new Date(scheduledArrival.getTime() + depDelayMs);
+                                actualArrivalTime = `${String(estimatedArrival.getHours()).padStart(2, '0')}:${String(estimatedArrival.getMinutes()).padStart(2, '0')}`;
+                            } else {
+                                actualArrivalTime = arrivalTime;
+                            }
+                        } else if (actualTime === 'On time' || actualTime === 'Delayed' || !actualTime) {
                             actualArrivalTime = arrivalTime;
                         } else {
                             actualArrivalTime = actualTime;
