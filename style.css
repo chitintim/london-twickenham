@@ -221,6 +221,11 @@ body {
     color: var(--success-color);
 }
 
+.departs-in.departed {
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
 .departs-in.safe {
     color: var(--success-color);
 }

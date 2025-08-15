@@ -121,7 +121,8 @@ async function processTrainData(departures, fromStation, toStation) {
     
     // Fetch more trains to ensure we get 5 good ones after filtering
     for (const service of departures.trainServices.slice(0, 10)) {
-        if (service.isCancelled) continue;
+        // Skip cancelled trains entirely
+        if (service.isCancelled || service.etd === 'Cancelled') continue;
         
         const departureTime = service.std;
         const actualDepartureTime = service.etd === 'On time' ? service.std : service.etd;
@@ -162,6 +163,9 @@ async function processTrainData(departures, fromStation, toStation) {
         } catch (err) {
             console.warn('Could not fetch arrival time:', err);
         }
+        
+        // Skip this train if arrival is cancelled
+        if (actualArrivalTime === 'Cancelled') continue;
         
         const duration = calculateDuration(actualDepartureTime, actualArrivalTime);
         
@@ -285,8 +289,10 @@ function displayTrains(trains) {
         departsIn.setAttribute('data-seconds', train.secondsUntil || 0);
         departsIn.textContent = formatDepartsIn(train.secondsUntil);
         
-        // Color coding: >20min green, 15-20min amber, 5-15min red, <5min dark red
-        if (train.secondsUntil !== null) {
+        // Color coding: departed grey, >20min green, 15-20min amber, 5-15min red, <5min dark red
+        if (train.secondsUntil === null || train.secondsUntil < 0) {
+            departsIn.classList.add('departed');
+        } else {
             const minutes = train.secondsUntil / 60;
             if (minutes < 5) {
                 departsIn.classList.add('critical');
@@ -337,8 +343,10 @@ function updateCountdowns() {
             element.textContent = formatDepartsIn(seconds);
             
             // Update color classes based on new time
-            element.classList.remove('safe', 'warning', 'urgent', 'critical');
-            if (seconds > 0) {
+            element.classList.remove('safe', 'warning', 'urgent', 'critical', 'departed');
+            if (seconds <= 0) {
+                element.classList.add('departed');
+            } else {
                 const minutes = seconds / 60;
                 if (minutes < 5) {
                     element.classList.add('critical');
