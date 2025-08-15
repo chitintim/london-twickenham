@@ -169,6 +169,7 @@ async function processTrainData(departures, fromStation, toStation) {
         
         let arrivalTime = null;
         let actualArrivalTime = null;
+        let skipTrain = false;
         
         try {
             const details = await fetchServiceDetails(service.serviceIdUrlSafe);
@@ -178,7 +179,10 @@ async function processTrainData(departures, fromStation, toStation) {
                     const callingPoints = details.subsequentCallingPoints[0].callingPoint || [];
                     const targetLocation = callingPoints.find(loc => loc.crs === toStation);
                     
-                    if (targetLocation) {
+                    // If this train doesn't actually stop at our destination, skip it
+                    if (!targetLocation) {
+                        skipTrain = true;
+                    } else {
                         arrivalTime = targetLocation.st;
                         const expectedTime = targetLocation.et;
                         
@@ -206,6 +210,9 @@ async function processTrainData(departures, fromStation, toStation) {
         } catch (err) {
             console.warn('Could not fetch arrival time:', err);
         }
+        
+        // Skip trains that don't actually stop at destination
+        if (skipTrain) continue;
         
         // Skip this train if arrival is cancelled
         if (actualArrivalTime === 'Cancelled') continue;
