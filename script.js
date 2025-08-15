@@ -202,7 +202,7 @@ async function processTrainData(departures, fromStation, toStation) {
     if (!departures || !departures.trainServices) return trains;
     
     // Check more services for WAT->TWI since we need to verify each one
-    const maxToCheck = (fromStation === 'WAT' && toStation === 'TWI') ? 15 : 10;
+    const maxToCheck = (fromStation === 'WAT' && toStation === 'TWI') ? 20 : 10;
     const servicesToCheck = departures.trainServices.slice(0, maxToCheck);
     
     for (const service of servicesToCheck) {
@@ -235,24 +235,16 @@ async function processTrainData(departures, fromStation, toStation) {
                     
                     // Check if train stops at our destination
                     if (!targetLocation) {
-                        // For WAT->TWI, check if this is a known false positive route
+                        // For WAT->TWI, be very permissive - show the train unless we're certain it doesn't stop
                         if (fromStation === 'WAT' && toStation === 'TWI') {
-                            // Check if it goes via Kingston (doesn't stop at TWI)
-                            const hasKingston = callingPoints.some(loc => loc.crs === 'KNG');
-                            const hasVauxhall = callingPoints.some(loc => loc.crs === 'VXH');
-                            
-                            if (hasKingston && hasVauxhall) {
-                                // This is the Kingston loop that skips Twickenham
-                                console.log(`Skipping ${service.destination?.[0]?.locationName} train - goes via Kingston, skips TWI`);
-                                skipTrain = true;
-                            } else {
-                                // Might be incomplete data, show with warning
-                                console.warn(`Warning: ${toStation} not found for ${service.destination?.[0]?.locationName} train - showing anyway`);
-                                arrivalTime = null;
-                                actualArrivalTime = null;
-                            }
+                            // Only skip if we're absolutely sure it doesn't stop at TWI
+                            // For now, show ALL trains and let the user decide
+                            console.warn(`${toStation} not found for ${service.destination?.[0]?.locationName} train - showing anyway`);
+                            arrivalTime = null;
+                            actualArrivalTime = null;
                         } else {
-                            // For other routes, be more trusting
+                            // For other routes, also be permissive
+                            console.warn(`${toStation} not found in calling points - showing anyway`);
                             arrivalTime = null;
                             actualArrivalTime = null;
                         }
