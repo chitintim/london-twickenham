@@ -277,9 +277,21 @@ function displayTrains(trains) {
     trains.forEach((train, index) => {
         const card = template.content.cloneNode(true);
         
-        // Display actual times (with delays) instead of scheduled times
-        card.querySelector('.departure-time').textContent = train.actualDepartureTime;
-        card.querySelector('.arrival-time').textContent = train.actualArrivalTime || '--:--';
+        // Display times - show scheduled crossed out if delayed
+        const departureTimeEl = card.querySelector('.departure-time');
+        const arrivalTimeEl = card.querySelector('.arrival-time');
+        
+        if (train.isDelayed && train.departureTime !== train.actualDepartureTime) {
+            departureTimeEl.innerHTML = `<span class="scheduled-time">${train.departureTime}</span> ${train.actualDepartureTime}`;
+        } else {
+            departureTimeEl.textContent = train.actualDepartureTime;
+        }
+        
+        if (train.isDelayed && train.arrivalTime && train.arrivalTime !== train.actualArrivalTime) {
+            arrivalTimeEl.innerHTML = `<span class="scheduled-time">${train.arrivalTime}</span> ${train.actualArrivalTime || '--:--'}`;
+        } else {
+            arrivalTimeEl.textContent = train.actualArrivalTime || '--:--';
+        }
         
         const platformBadge = card.querySelector('.platform-badge');
         platformBadge.classList.toggle('predicted', !train.platformConfirmed);
