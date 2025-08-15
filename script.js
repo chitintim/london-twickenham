@@ -150,7 +150,12 @@ async function processTrainData(departures, fromStation, toStation) {
                     if (targetLocation) {
                         arrivalTime = targetLocation.st;
                         const expectedTime = targetLocation.et;
-                        actualArrivalTime = (expectedTime === 'On time' || !expectedTime) ? arrivalTime : expectedTime;
+                        // Handle "Delayed" without specific time
+                        if (expectedTime === 'On time' || expectedTime === 'Delayed' || !expectedTime) {
+                            actualArrivalTime = arrivalTime;
+                        } else {
+                            actualArrivalTime = expectedTime;
+                        }
                     }
                 }
                 
@@ -162,7 +167,12 @@ async function processTrainData(departures, fromStation, toStation) {
                     if (targetLocation) {
                         arrivalTime = targetLocation.st;
                         const actualTime = targetLocation.at;
-                        actualArrivalTime = (actualTime === 'On time' || !actualTime) ? arrivalTime : actualTime;
+                        // Handle "Delayed" without specific time
+                        if (actualTime === 'On time' || actualTime === 'Delayed' || !actualTime) {
+                            actualArrivalTime = arrivalTime;
+                        } else {
+                            actualArrivalTime = actualTime;
+                        }
                     }
                 }
             }
