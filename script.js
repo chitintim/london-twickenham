@@ -133,17 +133,29 @@ async function processTrainData(departures, fromStation, toStation) {
         
         try {
             const details = await fetchServiceDetails(service.serviceIdUrlSafe);
-            if (details && details.locations) {
-                const targetLocation = details.locations.find(loc => 
-                    loc.crs === toStation
-                );
+            if (details) {
+                // Check subsequentCallingPoints for future stops
+                if (details.subsequentCallingPoints && details.subsequentCallingPoints.length > 0) {
+                    const callingPoints = details.subsequentCallingPoints[0].callingPoint || [];
+                    const targetLocation = callingPoints.find(loc => loc.crs === toStation);
+                    
+                    if (targetLocation) {
+                        arrivalTime = targetLocation.st;
+                        const expectedTime = targetLocation.et;
+                        actualArrivalTime = (expectedTime === 'On time' || !expectedTime) ? arrivalTime : expectedTime;
+                    }
+                }
                 
-                if (targetLocation) {
-                    // For arrivals, use 'st' (scheduled time) and 'et' (expected time)
-                    // For departures from a station, it would be 'sta' and 'eta'
-                    arrivalTime = targetLocation.st || targetLocation.sta;
-                    const expectedTime = targetLocation.et || targetLocation.eta;
-                    actualArrivalTime = (expectedTime === 'On time' || !expectedTime) ? arrivalTime : expectedTime;
+                // If not found in subsequent, check previous calling points (for return journeys)
+                if (!arrivalTime && details.previousCallingPoints && details.previousCallingPoints.length > 0) {
+                    const callingPoints = details.previousCallingPoints[0].callingPoint || [];
+                    const targetLocation = callingPoints.find(loc => loc.crs === toStation);
+                    
+                    if (targetLocation) {
+                        arrivalTime = targetLocation.st;
+                        const actualTime = targetLocation.at;
+                        actualArrivalTime = (actualTime === 'On time' || !actualTime) ? arrivalTime : actualTime;
+                    }
                 }
             }
         } catch (err) {
