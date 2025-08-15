@@ -237,16 +237,16 @@ async function processTrainData(departures, fromStation, toStation) {
                     if (!targetLocation) {
                         // For WAT->TWI, be very permissive - show the train unless we're certain it doesn't stop
                         if (fromStation === 'WAT' && toStation === 'TWI') {
-                            // Only skip if we're absolutely sure it doesn't stop at TWI
-                            // For now, show ALL trains and let the user decide
-                            console.warn(`${toStation} not found for ${service.destination?.[0]?.locationName} train - showing anyway`);
-                            arrivalTime = null;
-                            actualArrivalTime = null;
+                            // The /to/ endpoint returned this train, so it probably stops at TWI
+                            // Mark it as "Check at station" since we can't find the exact time
+                            console.warn(`${toStation} not found for ${service.destination?.[0]?.locationName} train - marking as 'Check at station'`);
+                            arrivalTime = 'Check';
+                            actualArrivalTime = 'Check at station';
                         } else {
                             // For other routes, also be permissive
-                            console.warn(`${toStation} not found in calling points - showing anyway`);
-                            arrivalTime = null;
-                            actualArrivalTime = null;
+                            console.warn(`${toStation} not found in calling points - marking as 'Check at station'`);
+                            arrivalTime = 'Check';
+                            actualArrivalTime = 'Check at station';
                         }
                     } else {
                         arrivalTime = targetLocation.st;
@@ -306,7 +306,7 @@ async function processTrainData(departures, fromStation, toStation) {
             isDelayed: service.etd !== 'On time' && service.etd !== 'Cancelled' && service.etd !== null,
             isCancelled: service.isCancelled || false,
             secondsUntil: secondsUntil,
-            arrivalSecondsFromNow: actualArrivalTime ? calculateSecondsUntil(actualArrivalTime) : null
+            arrivalSecondsFromNow: (actualArrivalTime && actualArrivalTime !== 'Check at station') ? calculateSecondsUntil(actualArrivalTime) : null
         });
     }
     
@@ -414,7 +414,9 @@ function displayTrains(trains) {
             departureTimeEl.textContent = train.actualDepartureTime;
         }
         
-        if (train.isDelayed && train.arrivalTime && train.arrivalTime !== train.actualArrivalTime) {
+        if (train.actualArrivalTime === 'Check at station') {
+            arrivalTimeEl.innerHTML = `<span style="font-size: 0.8em; opacity: 0.7;">Check at station</span>`;
+        } else if (train.isDelayed && train.arrivalTime && train.arrivalTime !== train.actualArrivalTime) {
             arrivalTimeEl.innerHTML = `<span class="scheduled-time">${train.arrivalTime}</span> ${train.actualArrivalTime || '--:--'}`;
         } else {
             arrivalTimeEl.textContent = train.actualArrivalTime || '--:--';
