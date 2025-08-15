@@ -63,8 +63,23 @@ function switchDirection() {
 }
 
 async function fetchFilteredDepartures(fromStation, toStation) {
-    // Actually, the /to/ endpoint DOES work for WAT->TWI!
-    // It returns trains that pass through Twickenham even if going elsewhere
+    // The /to/ endpoint is unreliable - it returns trains that don't actually stop at the destination!
+    // For WAT->TWI it returns trains via Kingston that skip Twickenham entirely
+    // We need to fetch all departures and check calling points manually
+    
+    if (fromStation === 'WAT' && toStation === 'TWI') {
+        // Fetch more departures and we'll filter properly in processTrainData
+        const url = `${HUXLEY_BASE}/departures/${fromStation}?rows=40`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to fetch departures: ${response.status}`);
+        }
+        
+        return response.json();
+    }
+    
+    // For TWI->WAT the /to/ endpoint might work better since WAT is usually terminal
     const url = `${HUXLEY_BASE}/departures/${fromStation}/to/${toStation}?rows=15`;
     const response = await fetch(url);
     
@@ -72,19 +87,7 @@ async function fetchFilteredDepartures(fromStation, toStation) {
         throw new Error(`Failed to fetch departures: ${response.status}`);
     }
     
-    const data = await response.json();
-    
-    // If we got very few results, try without filter and check more trains
-    if (!data.trainServices || data.trainServices.length < 5) {
-        const fallbackUrl = `${HUXLEY_BASE}/departures/${fromStation}?rows=50`;
-        const fallbackResponse = await fetch(fallbackUrl);
-        
-        if (fallbackResponse.ok) {
-            return fallbackResponse.json();
-        }
-    }
-    
-    return data;
+    return response.json();
 }
 
 async function fetchServiceDetails(serviceId) {
@@ -164,9 +167,9 @@ async function processTrainData(departures, fromStation, toStation) {
     
     if (!departures || !departures.trainServices) return trains;
     
-    // If we're using the /to/ endpoint and it worked, we can trust the results
-    // Just check the first 10 services since they're already filtered
-    const servicesToCheck = departures.trainServices.slice(0, 10);
+    // For WAT->TWI we need to check more services since many don't stop at TWI
+    const maxToCheck = (fromStation === 'WAT' && toStation === 'TWI') ? 25 : 10;
+    const servicesToCheck = departures.trainServices.slice(0, maxToCheck);
     
     for (const service of servicesToCheck) {
         // Skip cancelled trains entirely
@@ -196,14 +199,10 @@ async function processTrainData(departures, fromStation, toStation) {
                     const callingPoints = details.subsequentCallingPoints[0].callingPoint || [];
                     const targetLocation = callingPoints.find(loc => loc.crs === toStation);
                     
-                    // The /to/ endpoint should have already filtered, but double-check
+                    // Check if train stops at our destination
                     if (!targetLocation) {
-                        // If we can't find it, maybe the API data is incomplete
-                        // Don't skip if we're trusting the /to/ endpoint
-                        console.warn(`Warning: ${toStation} not found in calling points for service to ${service.destination?.[0]?.locationName}`);
-                        // Still try to show the train with departure time only
-                        arrivalTime = null;
-                        actualArrivalTime = null;
+                        // Skip this train - it doesn't stop at our destination
+                        skipTrain = true;
                     } else {
                         arrivalTime = targetLocation.st;
                         const expectedTime = targetLocation.et;
