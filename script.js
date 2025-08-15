@@ -156,8 +156,8 @@ async function processTrainData(departures, fromStation, toStation) {
     if (!departures || !departures.trainServices) return trains;
     
     // Fetch more trains to ensure we get 5 good ones after filtering
-    // Get up to 15 services to account for filtering
-    const servicesToCheck = departures.trainServices ? departures.trainServices.slice(0, 15) : [];
+    // Get up to 30 services to account for filtering (many WAT trains don't stop at TWI)
+    const servicesToCheck = departures.trainServices ? departures.trainServices.slice(0, 30) : [];
     
     for (const service of servicesToCheck) {
         // Skip cancelled trains entirely
@@ -189,28 +189,34 @@ async function processTrainData(departures, fromStation, toStation) {
                     
                     // If this train doesn't actually stop at our destination, skip it
                     if (!targetLocation) {
-                        // Log for debugging but don't skip trains going to places like Hounslow that might stop at TWI
-                        console.log(`Train to ${service.destination[0].locationName} doesn't stop at ${toStation}`);
                         skipTrain = true;
                     } else {
                         arrivalTime = targetLocation.st;
                         const expectedTime = targetLocation.et;
                         
-                        // Handle "Delayed" without specific time
-                        if (expectedTime === 'Delayed' && actualDepartureTime !== departureTime) {
-                            // Calculate delay from departure and apply to arrival
-                            const depDelayMs = parseTime(actualDepartureTime) - parseTime(departureTime);
-                            if (depDelayMs && arrivalTime) {
-                                const scheduledArrival = parseTime(arrivalTime, departureTime);
-                                const estimatedArrival = new Date(scheduledArrival.getTime() + depDelayMs);
+                        // Handle arrival times with priority:
+                        // 1. Use published delayed arrival time if available (e.g., "16:45")
+                        // 2. If just "Delayed" without time, calculate based on journey duration
+                        // 3. If "On time" or no update, use scheduled time
+                        if (expectedTime && expectedTime !== 'On time' && expectedTime !== 'Delayed') {
+                            // We have a specific updated arrival time (e.g., "16:45")
+                            actualArrivalTime = expectedTime;
+                        } else if (expectedTime === 'Delayed' || (service.etd === 'Delayed' && !expectedTime)) {
+                            // Train is delayed but no specific arrival time given
+                            // Calculate journey duration from scheduled times and apply to actual departure
+                            const scheduledDep = parseTime(departureTime);
+                            const scheduledArr = parseTime(arrivalTime, departureTime);
+                            if (scheduledDep && scheduledArr) {
+                                const journeyDurationMs = scheduledArr - scheduledDep;
+                                const actualDep = parseTime(actualDepartureTime);
+                                const estimatedArrival = new Date(actualDep.getTime() + journeyDurationMs);
                                 actualArrivalTime = `${String(estimatedArrival.getHours()).padStart(2, '0')}:${String(estimatedArrival.getMinutes()).padStart(2, '0')}`;
                             } else {
                                 actualArrivalTime = arrivalTime;
                             }
-                        } else if (expectedTime === 'On time' || expectedTime === 'Delayed' || !expectedTime) {
-                            actualArrivalTime = arrivalTime;
                         } else {
-                            actualArrivalTime = expectedTime;
+                            // On time or no update - use scheduled arrival time
+                            actualArrivalTime = arrivalTime;
                         }
                     }
                 }
