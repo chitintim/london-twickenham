@@ -119,7 +119,7 @@ async function processTrainData(departures, fromStation, toStation) {
     
     if (!departures || !departures.trainServices) return trains;
     
-    for (const service of departures.trainServices.slice(0, 5)) {
+    for (const service of departures.trainServices.slice(0, 6)) {
         if (service.isCancelled) continue;
         
         const departureTime = service.std;
@@ -161,9 +161,23 @@ async function processTrainData(departures, fromStation, toStation) {
             operator: service.operator,
             isDelayed: service.etd !== 'On time' && service.etd !== 'Cancelled',
             isCancelled: service.isCancelled || false,
-            secondsUntil: secondsUntil
+            secondsUntil: secondsUntil,
+            arrivalSecondsFromNow: actualArrivalTime ? calculateSecondsUntil(actualArrivalTime) : null
         });
     }
+    
+    // Sort by actual arrival time (accounting for delays)
+    trains.sort((a, b) => {
+        // If both have arrival times, sort by those
+        if (a.arrivalSecondsFromNow !== null && b.arrivalSecondsFromNow !== null) {
+            return a.arrivalSecondsFromNow - b.arrivalSecondsFromNow;
+        }
+        // If only one has arrival time, prioritize it
+        if (a.arrivalSecondsFromNow === null && b.arrivalSecondsFromNow !== null) return 1;
+        if (a.arrivalSecondsFromNow !== null && b.arrivalSecondsFromNow === null) return -1;
+        // If neither has arrival time, sort by departure
+        return (a.secondsUntil || 0) - (b.secondsUntil || 0);
+    });
     
     return trains.slice(0, 3);
 }
@@ -213,8 +227,9 @@ function displayTrains(trains) {
     trains.forEach((train, index) => {
         const card = template.content.cloneNode(true);
         
-        card.querySelector('.departure-time').textContent = train.departureTime;
-        card.querySelector('.arrival-time').textContent = train.arrivalTime || '--:--';
+        // Display actual times (with delays) instead of scheduled times
+        card.querySelector('.departure-time').textContent = train.actualDepartureTime;
+        card.querySelector('.arrival-time').textContent = train.actualArrivalTime || '--:--';
         
         const platformBadge = card.querySelector('.platform-badge');
         platformBadge.classList.toggle('predicted', !train.platformConfirmed);
