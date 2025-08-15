@@ -63,8 +63,57 @@ function switchDirection() {
 }
 
 async function fetchFilteredDepartures(fromStation, toStation) {
-    // Actually, the /to/ endpoint DOES work for WAT->TWI!
-    // It returns trains that pass through Twickenham even if going elsewhere
+    // For WAT->TWI, we need a hybrid approach
+    // The /to/ endpoint has false positives but is still useful as a starting point
+    
+    if (fromStation === 'WAT' && toStation === 'TWI') {
+        // First try the /to/ endpoint
+        const filteredUrl = `${HUXLEY_BASE}/departures/${fromStation}/to/${toStation}?rows=20`;
+        const filteredResponse = await fetch(filteredUrl);
+        
+        if (filteredResponse.ok) {
+            const filteredData = await filteredResponse.json();
+            
+            // Also fetch unfiltered to catch any trains the /to/ endpoint might miss
+            const unfilteredUrl = `${HUXLEY_BASE}/departures/${fromStation}?rows=30`;
+            const unfilteredResponse = await fetch(unfilteredUrl);
+            
+            if (unfilteredResponse.ok) {
+                const unfilteredData = await unfilteredResponse.json();
+                
+                // Combine both results, prioritizing the filtered ones
+                const combinedServices = [];
+                const seenIds = new Set();
+                
+                // Add filtered results first
+                if (filteredData.trainServices) {
+                    filteredData.trainServices.forEach(service => {
+                        combinedServices.push(service);
+                        seenIds.add(service.serviceIdUrlSafe);
+                    });
+                }
+                
+                // Add unfiltered trains that might go to TWI
+                if (unfilteredData.trainServices) {
+                    const twiDestinations = ['Richmond', 'Hounslow', 'Shepperton', 'Brentford', 'Reading', 'Windsor'];
+                    unfilteredData.trainServices.forEach(service => {
+                        if (!seenIds.has(service.serviceIdUrlSafe)) {
+                            const dest = service.destination?.[0]?.locationName || '';
+                            if (twiDestinations.some(d => dest.includes(d))) {
+                                combinedServices.push(service);
+                            }
+                        }
+                    });
+                }
+                
+                return { ...filteredData, trainServices: combinedServices };
+            }
+            
+            return filteredData;
+        }
+    }
+    
+    // For other routes, use the standard /to/ endpoint
     const url = `${HUXLEY_BASE}/departures/${fromStation}/to/${toStation}?rows=15`;
     const response = await fetch(url);
     
@@ -72,19 +121,7 @@ async function fetchFilteredDepartures(fromStation, toStation) {
         throw new Error(`Failed to fetch departures: ${response.status}`);
     }
     
-    const data = await response.json();
-    
-    // If we got very few results, try without filter and check more trains
-    if (!data.trainServices || data.trainServices.length < 5) {
-        const fallbackUrl = `${HUXLEY_BASE}/departures/${fromStation}?rows=50`;
-        const fallbackResponse = await fetch(fallbackUrl);
-        
-        if (fallbackResponse.ok) {
-            return fallbackResponse.json();
-        }
-    }
-    
-    return data;
+    return response.json();
 }
 
 async function fetchServiceDetails(serviceId) {
@@ -164,9 +201,9 @@ async function processTrainData(departures, fromStation, toStation) {
     
     if (!departures || !departures.trainServices) return trains;
     
-    // If we're using the /to/ endpoint and it worked, we can trust the results
-    // Just check the first 10 services since they're already filtered
-    const servicesToCheck = departures.trainServices.slice(0, 10);
+    // Check more services for WAT->TWI since we need to verify each one
+    const maxToCheck = (fromStation === 'WAT' && toStation === 'TWI') ? 15 : 10;
+    const servicesToCheck = departures.trainServices.slice(0, maxToCheck);
     
     for (const service of servicesToCheck) {
         // Skip cancelled trains entirely
@@ -196,14 +233,29 @@ async function processTrainData(departures, fromStation, toStation) {
                     const callingPoints = details.subsequentCallingPoints[0].callingPoint || [];
                     const targetLocation = callingPoints.find(loc => loc.crs === toStation);
                     
-                    // The /to/ endpoint should have already filtered, but double-check
+                    // Check if train stops at our destination
                     if (!targetLocation) {
-                        // If we can't find it, maybe the API data is incomplete
-                        // Don't skip if we're trusting the /to/ endpoint
-                        console.warn(`Warning: ${toStation} not found in calling points for service to ${service.destination?.[0]?.locationName}`);
-                        // Still try to show the train with departure time only
-                        arrivalTime = null;
-                        actualArrivalTime = null;
+                        // For WAT->TWI, check if this is a known false positive route
+                        if (fromStation === 'WAT' && toStation === 'TWI') {
+                            // Check if it goes via Kingston (doesn't stop at TWI)
+                            const hasKingston = callingPoints.some(loc => loc.crs === 'KNG');
+                            const hasVauxhall = callingPoints.some(loc => loc.crs === 'VXH');
+                            
+                            if (hasKingston && hasVauxhall) {
+                                // This is the Kingston loop that skips Twickenham
+                                console.log(`Skipping ${service.destination?.[0]?.locationName} train - goes via Kingston, skips TWI`);
+                                skipTrain = true;
+                            } else {
+                                // Might be incomplete data, show with warning
+                                console.warn(`Warning: ${toStation} not found for ${service.destination?.[0]?.locationName} train - showing anyway`);
+                                arrivalTime = null;
+                                actualArrivalTime = null;
+                            }
+                        } else {
+                            // For other routes, be more trusting
+                            arrivalTime = null;
+                            actualArrivalTime = null;
+                        }
                     } else {
                         arrivalTime = targetLocation.st;
                         const expectedTime = targetLocation.et;
