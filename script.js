@@ -24,11 +24,24 @@ const elements = {
 };
 
 function determineDirection() {
+    // Check if user has a saved preference
+    const savedDirection = localStorage.getItem('trainDirection');
+    if (savedDirection) {
+        return savedDirection;
+    }
+    
+    // Otherwise use time-based default
     const now = new Date();
     const londonTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/London"}));
     const hour = londonTime.getHours();
     
-    return hour < 14 ? 'to-london' : 'from-london';
+    // Morning commute (4am-2pm): Twickenham to London
+    // Evening/night (2pm-4am): London to Twickenham
+    if (hour >= 4 && hour < 14) {
+        return 'to-london';
+    } else {
+        return 'from-london';
+    }
 }
 
 function updateDirectionDisplay() {
@@ -43,6 +56,8 @@ function updateDirectionDisplay() {
 
 function switchDirection() {
     currentDirection = currentDirection === 'to-london' ? 'from-london' : 'to-london';
+    // Save user's preference
+    localStorage.setItem('trainDirection', currentDirection);
     updateDirectionDisplay();
     fetchTrains();
 }
@@ -291,6 +306,9 @@ async function processTrainData(departures, fromStation, toStation) {
 async function fetchTrains() {
     showLoading();
     stopCountdown();
+    
+    // Save current direction to remember user's choice
+    localStorage.setItem('trainDirection', currentDirection);
     
     try {
         let trains;
