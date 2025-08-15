@@ -125,7 +125,13 @@ async function processTrainData(departures, fromStation, toStation) {
         if (service.isCancelled || service.etd === 'Cancelled') continue;
         
         const departureTime = service.std;
-        const actualDepartureTime = service.etd === 'On time' ? service.std : service.etd;
+        // If ETD is "Delayed" without a specific time, use scheduled time
+        let actualDepartureTime;
+        if (service.etd === 'On time' || service.etd === 'Delayed') {
+            actualDepartureTime = service.std;
+        } else {
+            actualDepartureTime = service.etd;
+        }
         const secondsUntil = calculateSecondsUntil(actualDepartureTime);
         
         if (secondsUntil !== null && secondsUntil < -60) continue;
@@ -179,7 +185,7 @@ async function processTrainData(departures, fromStation, toStation) {
             platformConfirmed: service.platform && !service.platform.includes('*'),
             destination: service.destination[0].locationName,
             operator: service.operator,
-            isDelayed: service.etd !== 'On time' && service.etd !== 'Cancelled',
+            isDelayed: service.etd !== 'On time' && service.etd !== 'Cancelled' && service.etd !== null,
             isCancelled: service.isCancelled || false,
             secondsUntil: secondsUntil,
             arrivalSecondsFromNow: actualArrivalTime ? calculateSecondsUntil(actualArrivalTime) : null
