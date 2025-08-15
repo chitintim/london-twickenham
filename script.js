@@ -93,11 +93,16 @@ function parseTime(timeString, referenceTime = null) {
     
     // If we have a reference time and the parsed time is before it,
     // assume it's the next day
-    if (referenceTime) {
-        const refDate = typeof referenceTime === 'string' ? parseTime(referenceTime) : referenceTime;
-        if (refDate && date < refDate) {
+    if (referenceTime && typeof referenceTime === 'string') {
+        const [refHours, refMinutes] = referenceTime.split(':').map(Number);
+        const refDate = new Date();
+        refDate.setHours(refHours, refMinutes, 0, 0);
+        
+        if (date < refDate) {
             date.setDate(date.getDate() + 1);
         }
+    } else if (referenceTime instanceof Date && date < referenceTime) {
+        date.setDate(date.getDate() + 1);
     }
     
     return date;
@@ -108,14 +113,7 @@ function calculateSecondsUntil(timeString, referenceTime = null) {
     if (!targetTime) return null;
     
     const now = new Date();
-    let diff = targetTime - now;
-    
-    // If the time appears to be in the past but it's a time string (not a date),
-    // it might be tomorrow
-    if (diff < -43200000 && timeString && timeString.includes(':')) { // More than 12 hours in past
-        targetTime.setDate(targetTime.getDate() + 1);
-        diff = targetTime - now;
-    }
+    const diff = targetTime - now;
     
     return Math.floor(diff / 1000);
 }
