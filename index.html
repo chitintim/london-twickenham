@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Twickenham ↔ London Trains</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a2e">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="route-display">
+                <span id="fromStation">TWICKENHAM</span>
+                <span class="arrow">→</span>
+                <span id="toStation">LONDON</span>
+            </div>
+            <button id="switchDirection" class="switch-btn" aria-label="Switch direction">
+                ↔
+            </button>
+        </header>
+
+        <main class="trains-container">
+            <div id="loadingMessage" class="loading">
+                <div class="spinner"></div>
+                <p>Finding trains...</p>
+            </div>
+            
+            <div id="errorMessage" class="error-message hidden">
+                <p>Unable to load train times</p>
+                <button id="retryButton" class="retry-btn">Retry</button>
+            </div>
+
+            <div id="trainsList" class="trains-list hidden">
+            </div>
+
+            <div id="noTrains" class="no-trains hidden">
+                <p>No trains found</p>
+                <p class="no-trains-hint">Try switching direction or check later</p>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <div class="update-info">
+                <span class="update-label">Updated:</span>
+                <span id="lastUpdate">--:--:--</span>
+            </div>
+            <button id="refreshButton" class="refresh-btn" aria-label="Refresh">
+                ↻
+            </button>
+        </footer>
+    </div>
+
+    <template id="trainCard">
+        <article class="train-card">
+            <div class="train-primary">
+                <div class="times">
+                    <span class="departure-time"></span>
+                    <span class="time-arrow">→</span>
+                    <span class="arrival-time"></span>
+                </div>
+                <div class="platform-badge">
+                    <span class="platform-label">Platform</span>
+                    <span class="platform-number"></span>
+                </div>
+            </div>
+            <div class="train-secondary">
+                <div class="departs-in"></div>
+                <div class="status-badge"></div>
+            </div>
+            <div class="train-tertiary">
+                <div class="destination"></div>
+                <div class="operator"></div>
+            </div>
+        </article>
+    </template>
+
+    <script src="script.js"></script>
+</body>
+</html>
