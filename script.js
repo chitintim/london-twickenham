@@ -173,7 +173,7 @@ async function processTrainData(departures, fromStation, toStation) {
         try {
             const details = await fetchServiceDetails(service.serviceIdUrlSafe);
             if (details) {
-                // Check subsequentCallingPoints for future stops
+                // ONLY check subsequentCallingPoints for future stops (destination should be ahead)
                 if (details.subsequentCallingPoints && details.subsequentCallingPoints.length > 0) {
                     const callingPoints = details.subsequentCallingPoints[0].callingPoint || [];
                     const targetLocation = callingPoints.find(loc => loc.crs === toStation);
@@ -201,33 +201,7 @@ async function processTrainData(departures, fromStation, toStation) {
                     }
                 }
                 
-                // If not found in subsequent, check previous calling points (for return journeys)
-                if (!arrivalTime && details.previousCallingPoints && details.previousCallingPoints.length > 0) {
-                    const callingPoints = details.previousCallingPoints[0].callingPoint || [];
-                    const targetLocation = callingPoints.find(loc => loc.crs === toStation);
-                    
-                    if (targetLocation) {
-                        arrivalTime = targetLocation.st;
-                        const actualTime = targetLocation.at;
-                        
-                        // Handle "Delayed" without specific time
-                        if (actualTime === 'Delayed' && actualDepartureTime !== departureTime) {
-                            // Calculate delay from departure and apply to arrival
-                            const depDelayMs = parseTime(actualDepartureTime) - parseTime(departureTime);
-                            if (depDelayMs && arrivalTime) {
-                                const scheduledArrival = parseTime(arrivalTime, departureTime);
-                                const estimatedArrival = new Date(scheduledArrival.getTime() + depDelayMs);
-                                actualArrivalTime = `${String(estimatedArrival.getHours()).padStart(2, '0')}:${String(estimatedArrival.getMinutes()).padStart(2, '0')}`;
-                            } else {
-                                actualArrivalTime = arrivalTime;
-                            }
-                        } else if (actualTime === 'On time' || actualTime === 'Delayed' || !actualTime) {
-                            actualArrivalTime = arrivalTime;
-                        } else {
-                            actualArrivalTime = actualTime;
-                        }
-                    }
-                }
+                // Don't check previous calling points - those are stops already passed!
             }
         } catch (err) {
             console.warn('Could not fetch arrival time:', err);
