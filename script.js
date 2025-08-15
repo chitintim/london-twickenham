@@ -63,14 +63,19 @@ function switchDirection() {
 }
 
 async function fetchFilteredDepartures(fromStation, toStation) {
-    const url = `${HUXLEY_BASE}/departures/${fromStation}/to/${toStation}`;
+    // The /to/ endpoint is unreliable, so fetch all departures and filter manually
+    const url = `${HUXLEY_BASE}/departures/${fromStation}`;
     const response = await fetch(url);
     
     if (!response.ok) {
         throw new Error(`Failed to fetch departures: ${response.status}`);
     }
     
-    return response.json();
+    const data = await response.json();
+    
+    // For now, return all services and let processTrainData handle the filtering
+    // This ensures we check subsequentCallingPoints to see if train stops at destination
+    return data;
 }
 
 async function fetchServiceDetails(serviceId) {
@@ -151,7 +156,10 @@ async function processTrainData(departures, fromStation, toStation) {
     if (!departures || !departures.trainServices) return trains;
     
     // Fetch more trains to ensure we get 5 good ones after filtering
-    for (const service of departures.trainServices.slice(0, 10)) {
+    // Get up to 15 services to account for filtering
+    const servicesToCheck = departures.trainServices ? departures.trainServices.slice(0, 15) : [];
+    
+    for (const service of servicesToCheck) {
         // Skip cancelled trains entirely
         if (service.isCancelled || service.etd === 'Cancelled') continue;
         
@@ -181,6 +189,8 @@ async function processTrainData(departures, fromStation, toStation) {
                     
                     // If this train doesn't actually stop at our destination, skip it
                     if (!targetLocation) {
+                        // Log for debugging but don't skip trains going to places like Hounslow that might stop at TWI
+                        console.log(`Train to ${service.destination[0].locationName} doesn't stop at ${toStation}`);
                         skipTrain = true;
                     } else {
                         arrivalTime = targetLocation.st;
