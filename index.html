@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Twickenham ↔ London Trains</title>
-    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="stylesheet" href="style.css?v=5">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a2e">
 </head>
@@ -17,6 +17,7 @@
                 <span id="fromStation">TWICKENHAM</span>
                 <span class="arrow">→</span>
                 <span id="toStation">LONDON</span>
+                <span class="info-badge" title="Times shown include any delays">LIVE</span>
             </div>
             <button id="switchDirection" class="switch-btn" aria-label="Switch direction" title="Switch direction">
                 ↔
@@ -45,7 +46,7 @@
 
         <footer class="footer">
             <div class="update-info">
-                <span class="update-label">Updated:</span>
+                <span class="update-label">Live times • Updated:</span>
                 <span id="lastUpdate">--:--:--</span>
             </div>
             <button id="refreshButton" class="refresh-btn" aria-label="Refresh">
@@ -78,6 +79,6 @@
         </article>
     </template>
 
-    <script src="script.js?v=4"></script>
+    <script src="script.js?v=5"></script>
 </body>
 </html>
