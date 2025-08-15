@@ -242,10 +242,18 @@ function displayTrains(trains) {
         departsIn.setAttribute('data-seconds', train.secondsUntil || 0);
         departsIn.textContent = formatDepartsIn(train.secondsUntil);
         
-        if (train.secondsUntil !== null && train.secondsUntil <= 120) {
-            departsIn.classList.add('urgent');
-        } else if (train.secondsUntil !== null && train.secondsUntil <= 300) {
-            departsIn.classList.add('soon');
+        // Color coding: >20min green, 15-20min amber, 5-15min red, <5min dark red
+        if (train.secondsUntil !== null) {
+            const minutes = train.secondsUntil / 60;
+            if (minutes < 5) {
+                departsIn.classList.add('critical');
+            } else if (minutes < 15) {
+                departsIn.classList.add('urgent');
+            } else if (minutes < 20) {
+                departsIn.classList.add('warning');
+            } else {
+                departsIn.classList.add('safe');
+            }
         }
         
         const statusBadge = card.querySelector('.status-badge');
@@ -285,11 +293,19 @@ function updateCountdowns() {
             element.setAttribute('data-seconds', seconds);
             element.textContent = formatDepartsIn(seconds);
             
-            element.classList.remove('urgent', 'soon');
-            if (seconds > 0 && seconds <= 120) {
-                element.classList.add('urgent');
-            } else if (seconds > 0 && seconds <= 300) {
-                element.classList.add('soon');
+            // Update color classes based on new time
+            element.classList.remove('safe', 'warning', 'urgent', 'critical');
+            if (seconds > 0) {
+                const minutes = seconds / 60;
+                if (minutes < 5) {
+                    element.classList.add('critical');
+                } else if (minutes < 15) {
+                    element.classList.add('urgent');
+                } else if (minutes < 20) {
+                    element.classList.add('warning');
+                } else {
+                    element.classList.add('safe');
+                }
             }
         }
     });

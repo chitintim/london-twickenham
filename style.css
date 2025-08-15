@@ -14,6 +14,7 @@
     --success-color: #28a745;
     --warning-color: #ffc107;
     --danger-color: #dc3545;
+    --danger-dark: #8b0000;
     --info-color: #007bff;
     --header-bg: #1a1a2e;
     --header-text: #ffffff;
@@ -202,15 +203,23 @@ body {
 .departs-in {
     font-size: 20px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--success-color);
+}
+
+.departs-in.safe {
+    color: var(--success-color);
+}
+
+.departs-in.warning {
+    color: var(--warning-color);
 }
 
 .departs-in.urgent {
     color: var(--danger-color);
 }
 
-.departs-in.soon {
-    color: var(--warning-color);
+.departs-in.critical {
+    color: var(--danger-dark);
 }
 
 .status-badge {
