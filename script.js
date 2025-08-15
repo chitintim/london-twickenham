@@ -119,7 +119,8 @@ async function processTrainData(departures, fromStation, toStation) {
     
     if (!departures || !departures.trainServices) return trains;
     
-    for (const service of departures.trainServices.slice(0, 6)) {
+    // Fetch more trains to ensure we get 5 good ones after filtering
+    for (const service of departures.trainServices.slice(0, 10)) {
         if (service.isCancelled) continue;
         
         const departureTime = service.std;
@@ -194,7 +195,37 @@ async function processTrainData(departures, fromStation, toStation) {
         return (a.secondsUntil || 0) - (b.secondsUntil || 0);
     });
     
-    return trains.slice(0, 3);
+    // Filter out illogical trains (uses actual times with delays)
+    const filteredTrains = [];
+    for (let i = 0; i < trains.length; i++) {
+        const currentTrain = trains[i];
+        let isLogical = true;
+        
+        // Check against all previously accepted trains
+        for (const acceptedTrain of filteredTrains) {
+            // Compare using actual times (secondsUntil is based on actualDepartureTime)
+            // If this train departs before an accepted train but arrives after it, skip it
+            if (currentTrain.secondsUntil !== null && acceptedTrain.secondsUntil !== null &&
+                currentTrain.arrivalSecondsFromNow !== null && acceptedTrain.arrivalSecondsFromNow !== null) {
+                
+                // This uses live/actual times since secondsUntil and arrivalSecondsFromNow 
+                // are calculated from actualDepartureTime and actualArrivalTime
+                if (currentTrain.secondsUntil < acceptedTrain.secondsUntil && 
+                    currentTrain.arrivalSecondsFromNow > acceptedTrain.arrivalSecondsFromNow) {
+                    isLogical = false;
+                    console.log(`Filtering out illogical train: departs ${currentTrain.actualDepartureTime} arrives ${currentTrain.actualArrivalTime}`);
+                    break;
+                }
+            }
+        }
+        
+        if (isLogical) {
+            filteredTrains.push(currentTrain);
+            if (filteredTrains.length >= 5) break; // Stop once we have 5 trains
+        }
+    }
+    
+    return filteredTrains;
 }
 
 async function fetchTrains() {
