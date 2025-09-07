@@ -124,17 +124,25 @@ async function fetchFilteredDepartures(fromStation, toStation) {
     return response.json();
 }
 
-async function fetchServiceDetails(serviceId) {
-    const url = `${HUXLEY_BASE}/service/${serviceId}`;
-    const response = await fetch(url);
+async function fetchArrivals(station, fromStation) {
+    // Fetch arrivals at the destination station from the origin station
+    const url = `${HUXLEY_BASE}/arrivals/${station}/from/${fromStation}?rows=30`;
     
-    if (!response.ok) {
-        console.warn(`Failed to fetch service details: ${response.status}`);
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            console.warn(`Failed to fetch arrivals: ${response.status}`);
+            return null;
+        }
+        return response.json();
+    } catch (err) {
+        console.warn('Error fetching arrivals:', err);
         return null;
     }
-    
-    return response.json();
 }
+
+// fetchServiceDetails is no longer used - we now use the arrivals endpoint instead
+// The /service/ endpoint is returning 500 errors as of late 2024
 
 function parseTime(timeString, referenceTime = null) {
     if (!timeString) return null;
@@ -196,11 +204,39 @@ function calculateDuration(departureTime, arrivalTime) {
     return `${minutes} mins`;
 }
 
-async function processTrainData(departures, fromStation, toStation) {
+async function processTrainData(departures, fromStation, toStation, arrivals) {
     const trains = [];
     const journeyTimeCache = new Map(); // Cache journey times from similar trains
     
     if (!departures || !departures.trainServices) return trains;
+    
+    // Create a map of arrival times by service ID
+    // Extract the numeric prefix from service IDs for matching
+    const arrivalMap = new Map();
+    if (arrivals && arrivals.trainServices) {
+        arrivals.trainServices.forEach(arrival => {
+            // Extract numeric prefix from serviceID (e.g., "391775" from "391775WATRLMN_")
+            const numericPrefix = arrival.serviceID.match(/^\d+/)?.[0];
+            if (numericPrefix) {
+                arrivalMap.set(numericPrefix, {
+                    sta: arrival.sta,
+                    eta: arrival.eta,
+                    platform: arrival.platform
+                });
+            }
+            // Also map by full IDs as fallback
+            arrivalMap.set(arrival.serviceIdUrlSafe, {
+                sta: arrival.sta,
+                eta: arrival.eta,
+                platform: arrival.platform
+            });
+            arrivalMap.set(arrival.serviceID, {
+                sta: arrival.sta,
+                eta: arrival.eta,
+                platform: arrival.platform
+            });
+        });
+    }
     
     // Check more services for WAT->TWI since we need to verify each one
     const maxToCheck = (fromStation === 'WAT' && toStation === 'TWI') ? 20 : 10;
@@ -226,82 +262,75 @@ async function processTrainData(departures, fromStation, toStation) {
         let actualArrivalTime = null;
         let skipTrain = false;
         
-        try {
-            const details = await fetchServiceDetails(service.serviceIdUrlSafe);
-            if (details) {
-                // ONLY check subsequentCallingPoints for future stops (destination should be ahead)
-                if (details.subsequentCallingPoints && details.subsequentCallingPoints.length > 0) {
-                    const callingPoints = details.subsequentCallingPoints[0].callingPoint || [];
-                    const targetLocation = callingPoints.find(loc => loc.crs === toStation);
-                    
-                    // Check if train stops at our destination
-                    if (!targetLocation) {
-                        // Try to estimate arrival time based on similar trains
-                        const destName = service.destination?.[0]?.locationName || '';
-                        const cacheKey = `${fromStation}-${toStation}-${destName}`;
-                        
-                        if (journeyTimeCache.has(cacheKey)) {
-                            // Use cached journey time for estimation
-                            const typicalJourneyMs = journeyTimeCache.get(cacheKey);
-                            const estArrival = new Date(parseTime(actualDepartureTime).getTime() + typicalJourneyMs);
-                            const estTime = `${String(estArrival.getHours()).padStart(2, '0')}:${String(estArrival.getMinutes()).padStart(2, '0')}`;
-                            console.log(`Estimated arrival at ${toStation} for ${destName} train: ${estTime} (based on similar trains)`);
-                            arrivalTime = 'Estimated';
-                            actualArrivalTime = `~${estTime} (est)`;
-                        } else {
-                            // No data to estimate, show Check at station
-                            console.warn(`${toStation} not found for ${destName} train - marking as 'Check at station'`);
-                            arrivalTime = 'Check';
-                            actualArrivalTime = 'Check at station';
-                        }
+        // Try to get arrival information from the arrivals data
+        // First try numeric prefix matching, then fall back to full ID matching
+        const serviceNumericPrefix = service.serviceID.match(/^\d+/)?.[0];
+        const arrivalInfo = (serviceNumericPrefix && arrivalMap.get(serviceNumericPrefix)) || 
+                           arrivalMap.get(service.serviceIdUrlSafe) || 
+                           arrivalMap.get(service.serviceID);
+        
+        if (arrivalInfo) {
+            // We found matching arrival information
+            arrivalTime = arrivalInfo.sta;
+            
+            // Handle different ETA values
+            if (arrivalInfo.eta === 'Cancelled') {
+                // Skip cancelled arrivals
+                continue;
+            } else if (arrivalInfo.eta === 'On time') {
+                actualArrivalTime = arrivalTime;
+            } else if (arrivalInfo.eta === 'Delayed') {
+                // Train is delayed but no specific time given
+                // Calculate based on typical journey time if we have it
+                if (departureTime && arrivalTime) {
+                    const scheduledDep = parseTime(departureTime);
+                    const scheduledArr = parseTime(arrivalTime, departureTime);
+                    if (scheduledDep && scheduledArr) {
+                        const journeyDurationMs = scheduledArr - scheduledDep;
+                        const actualDep = parseTime(actualDepartureTime);
+                        const estimatedArrival = new Date(actualDep.getTime() + journeyDurationMs);
+                        actualArrivalTime = `${String(estimatedArrival.getHours()).padStart(2, '0')}:${String(estimatedArrival.getMinutes()).padStart(2, '0')}`;
                     } else {
-                        arrivalTime = targetLocation.st;
-                        const expectedTime = targetLocation.et;
-                        
-                        // Cache this journey time for estimating similar trains
-                        if (departureTime && arrivalTime) {
-                            const depTime = parseTime(departureTime);
-                            const arrTime = parseTime(arrivalTime, departureTime);
-                            if (depTime && arrTime) {
-                                const journeyMs = arrTime - depTime;
-                                const destName = service.destination?.[0]?.locationName || '';
-                                const cacheKey = `${fromStation}-${toStation}-${destName}`;
-                                journeyTimeCache.set(cacheKey, journeyMs);
-                                console.log(`Cached journey time for ${cacheKey}: ${Math.round(journeyMs/60000)} mins`);
-                            }
-                        }
-                        
-                        // Handle arrival times with priority:
-                        // 1. Use published delayed arrival time if available (e.g., "16:45")
-                        // 2. If just "Delayed" without time, calculate based on journey duration
-                        // 3. If "On time" or no update, use scheduled time
-                        if (expectedTime && expectedTime !== 'On time' && expectedTime !== 'Delayed') {
-                            // We have a specific updated arrival time (e.g., "16:45")
-                            actualArrivalTime = expectedTime;
-                        } else if (expectedTime === 'Delayed' || (service.etd === 'Delayed' && !expectedTime)) {
-                            // Train is delayed but no specific arrival time given
-                            // Calculate journey duration from scheduled times and apply to actual departure
-                            const scheduledDep = parseTime(departureTime);
-                            const scheduledArr = parseTime(arrivalTime, departureTime);
-                            if (scheduledDep && scheduledArr) {
-                                const journeyDurationMs = scheduledArr - scheduledDep;
-                                const actualDep = parseTime(actualDepartureTime);
-                                const estimatedArrival = new Date(actualDep.getTime() + journeyDurationMs);
-                                actualArrivalTime = `${String(estimatedArrival.getHours()).padStart(2, '0')}:${String(estimatedArrival.getMinutes()).padStart(2, '0')}`;
-                            } else {
-                                actualArrivalTime = arrivalTime;
-                            }
-                        } else {
-                            // On time or no update - use scheduled arrival time
-                            actualArrivalTime = arrivalTime;
-                        }
+                        actualArrivalTime = arrivalTime;
                     }
                 }
-                
-                // Don't check previous calling points - those are stops already passed!
+            } else if (arrivalInfo.eta) {
+                // We have a specific arrival time (e.g., "16:45")
+                actualArrivalTime = arrivalInfo.eta;
+            } else {
+                actualArrivalTime = arrivalTime;
             }
-        } catch (err) {
-            console.warn('Could not fetch arrival time:', err);
+            
+            // Cache journey time for similar trains
+            if (departureTime && arrivalTime) {
+                const depTime = parseTime(departureTime);
+                const arrTime = parseTime(arrivalTime, departureTime);
+                if (depTime && arrTime) {
+                    const journeyMs = arrTime - depTime;
+                    const destName = service.destination?.[0]?.locationName || '';
+                    const cacheKey = `${fromStation}-${toStation}-${destName}`;
+                    journeyTimeCache.set(cacheKey, journeyMs);
+                }
+            }
+        } else {
+            // No arrival data found - try to estimate or show "Check at station"
+            const destName = service.destination?.[0]?.locationName || '';
+            const cacheKey = `${fromStation}-${toStation}-${destName}`;
+            
+            if (journeyTimeCache.has(cacheKey)) {
+                // Use cached journey time for estimation
+                const typicalJourneyMs = journeyTimeCache.get(cacheKey);
+                const estArrival = new Date(parseTime(actualDepartureTime).getTime() + typicalJourneyMs);
+                const estTime = `${String(estArrival.getHours()).padStart(2, '0')}:${String(estArrival.getMinutes()).padStart(2, '0')}`;
+                console.log(`Estimated arrival at ${toStation} for ${destName} train: ${estTime} (based on similar trains)`);
+                arrivalTime = 'Estimated';
+                actualArrivalTime = `~${estTime} (est)`;
+            } else {
+                // No data to estimate, show Check at station
+                console.warn(`No arrival data for ${destName} train - marking as 'Check at station'`);
+                arrivalTime = 'Check';
+                actualArrivalTime = 'Check at station';
+            }
         }
         
         // Skip trains that don't actually stop at destination
@@ -389,11 +418,19 @@ async function fetchTrains() {
         let trains;
         
         if (currentDirection === 'to-london') {
-            const data = await fetchFilteredDepartures(STATIONS.TWICKENHAM, STATIONS.WATERLOO);
-            trains = await processTrainData(data, STATIONS.TWICKENHAM, STATIONS.WATERLOO);
+            // Fetch both departures and arrivals in parallel
+            const [departuresData, arrivalsData] = await Promise.all([
+                fetchFilteredDepartures(STATIONS.TWICKENHAM, STATIONS.WATERLOO),
+                fetchArrivals(STATIONS.WATERLOO, STATIONS.TWICKENHAM)
+            ]);
+            trains = await processTrainData(departuresData, STATIONS.TWICKENHAM, STATIONS.WATERLOO, arrivalsData);
         } else {
-            const data = await fetchFilteredDepartures(STATIONS.WATERLOO, STATIONS.TWICKENHAM);
-            trains = await processTrainData(data, STATIONS.WATERLOO, STATIONS.TWICKENHAM);
+            // Fetch both departures and arrivals in parallel
+            const [departuresData, arrivalsData] = await Promise.all([
+                fetchFilteredDepartures(STATIONS.WATERLOO, STATIONS.TWICKENHAM),
+                fetchArrivals(STATIONS.TWICKENHAM, STATIONS.WATERLOO)
+            ]);
+            trains = await processTrainData(departuresData, STATIONS.WATERLOO, STATIONS.TWICKENHAM, arrivalsData);
         }
         
         trainData = trains;
